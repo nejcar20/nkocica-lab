@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nejc's Lab</title>
+<meta name="description" content="Small interactive demos by Nejc Kocica: 3D, physics, data, and AI agents at work.">
+<meta property="og:title" content="Nejc's Lab">
+<meta property="og:description" content="Small interactive demos: open one and play.">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root { --bg: #08090c; --fg: #f2f2f0; --dim: #8a8d96; --line: #1d2027; --card: #0f1116; --accent: #7cc4ff; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Inter, sans-serif;
+         -webkit-font-smoothing: antialiased; min-height: 100vh; }
+  main { max-width: 1120px; margin: 0 auto; padding: 72px 16px 96px; }
+  header { margin-bottom: 56px; }
+  h1 { font-size: clamp(36px, 6vw, 64px); letter-spacing: -0.03em; font-weight: 650; line-height: 1.02; }
+  header p { color: var(--dim); margin-top: 14px; max-width: 520px; }
+  header a { color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--line); }
+  .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+          color: inherit; text-decoration: none; transition: transform .25s ease, border-color .25s ease; }
+  .card:hover { transform: translateY(-3px); border-color: #2c3140; }
+  .card .media { aspect-ratio: 4 / 3; background: #000; display: block; width: 100%; object-fit: cover; }
+  .card .body { padding: 16px 18px 18px; }
+  .card h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .card p { color: var(--dim); font-size: 14px; margin-top: 4px; }
+  .card time { color: #5d616b; font-size: 12px; display: block; margin-top: 10px; }
+  .empty { color: var(--dim); border: 1px dashed var(--line); border-radius: 14px; padding: 48px 24px; text-align: center; }
+  footer { color: #5d616b; font-size: 13px; margin-top: 72px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Lab.</h1>
+    <p>Small things I build to see what happens: 3D, physics, data, and AI agents at work. Open one and play.
+       More on <a href="https://x.com/NKocica">@NKocica</a>.</p>
+  </header>
+  <section class="grid" id="grid"></section>
+  <footer>Everything runs in your browser. No tracking.</footer>
+</main>
+<script>
+  const grid = document.getElementById("grid");
+  fetch("demos.json", { cache: "no-store" }).then(r => r.json()).then(list => {
+    if (!list.length) { grid.outerHTML = '<p class="empty">The first demos land this week.</p>'; return; }
+    list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    for (const d of list) {
+      const a = document.createElement("a");
+      a.className = "card"; a.href = `demos/${d.slug}/`;
+      const media = d.preview && /\.(mp4|webm)$/.test(d.preview)
+        ? Object.assign(document.createElement("video"), { src: `demos/${d.slug}/${d.preview}`, muted: true, loop: true, playsInline: true, autoplay: true })
+        : Object.assign(document.createElement("img"), { src: `demos/${d.slug}/${d.preview || "poster.png"}`, alt: "", loading: "lazy" });
+      media.className = "media";
+      const body = document.createElement("div"); body.className = "body";
+      body.append(Object.assign(document.createElement("h2"), { textContent: d.title }),
+                  Object.assign(document.createElement("p"), { textContent: d.line || "" }),
+                  Object.assign(document.createElement("time"), { textContent: d.date || "" }));
+      a.append(media, body); grid.append(a);
+    }
+  }).catch(() => { grid.outerHTML = '<p class="empty">The first demos land this week.</p>'; });
+</script>
+</body>
+</html>
