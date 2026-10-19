@@ -1,0 +1,105 @@
+{
+  "piece": "demos/founder-sentence",
+  "locked_by": "Studio Lead, 2026-10-19",
+  "rule": "Nothing goes on screen, in post.txt or in alt.txt unless it traces to an id below. Numbers are copied, never rounded.",
+  "claims": [
+    {
+      "id": "F1",
+      "claim": "On 13 Oct 2026 at 08:53 UTC our Social Media Manager bot answered a video job with a question it could not even print, and no video.",
+      "exact_source_sentence": "❓ **The run stopped to ask a question** (it cannot answer itself, so it was ended):\n\n(the question text could not be read from the session log)",
+      "source": "Discord #socials message 1559489123461365812, author \"Social Media Manager\", timestamp 2026-10-13T08:53:00.940Z, 0 attachments",
+      "verified": "GET /api/v10/channels/1537051142603931649/messages/1559489123461365812 -> HTTP 200, read 2026-10-19 by the Studio Lead",
+      "on_screen_allowed": true
+    },
+    {
+      "id": "F2",
+      "claim": "The founder's own sentences that day were \"I got this but no image\" and then \"can you fix it?\".",
+      "exact_source_sentence": "Founder's original sentences, 13 Oct: 'I got this but no image' then 'can you fix it?'; fix live 10:42 the same day.",
+      "source": "our internal decision log line 140, recorded 2026-10-18 from the founder's own session",
+      "verified": "grep of our internal decision log, read 2026-10-19 by the Studio Lead",
+      "on_screen_allowed": true,
+      "limit": "Quote the sentences only. The exact clock time of each sentence is not verified, so no timestamp may be attached to them on screen."
+    },
+    {
+      "id": "F3",
+      "claim": "Two causes, not one: a 120 s shell timeout pushed the render into the background, and an empty AskUserQuestion was still treated as a real question, so killing the run killed the render.",
+      "exact_source_sentence": "Model called `AskUserQuestion {\"questions\": []}` → InputValidationError, but claude-run.js:630 still treats it as a question (`normalizeQuestion(...) || { questions: [] }`) → killReason=question, exit 129.",
+      "source": "our internal incident record description (Social Media Manager: video renders killed)",
+      "verified": "our internal incident record fetched from our internal tracker's API 2026-10-19; the pre-fix line still reads `question = normalizeQuestion(tu.input) || { questions: [] };` at lib/claude-run.js:631 in the local copy of social-media-handler",
+      "on_screen_allowed": true,
+      "limit": "The cause may be shown as the mechanism that killed the render. It may NOT be shown as a diff, a patch or a passing test, because the deployed change was not read from this host (see unverified)."
+    },
+    {
+      "id": "F4",
+      "claim": "3 h 2 min after the dead card, the same flow in the same channel delivered a playable 1.68 MB mp4.",
+      "exact_source_sentence": "attachment video_post_en.mp4, 1679022 bytes, content_type video/mp4",
+      "source": "Discord #socials message 1559535150612742217, author \"Social Media Manager\", timestamp 2026-10-13T11:55:54.668Z",
+      "verified": "GET /api/v10/channels/1537051142603931649/messages/1559535150612742217 -> HTTP 200, read 2026-10-19 by the Studio Lead. Gap from F1 computed from both API timestamps: 10,973 s = 3 h 2 min 53 s",
+      "on_screen_allowed": true,
+      "limit": "Say \"3 h 2 min\" or \"just over three hours\". Never \"3 hours\" rounded down and never \"minutes\"."
+    },
+    {
+      "id": "F5",
+      "claim": "The line that did it was rewritten the same morning, at 09:17:23 UTC, in commit 60f0e18 on main.",
+      "exact_source_sentence": "fix(our internal incident record): keep a video render in the foreground, and let a rejected AskUserQuestion pass",
+      "diff_removed": "question = normalizeQuestion(tu.input) || { questions: [] };",
+      "diff_added": "const asked = normalizeQuestion(tu.input);\nif (asked) {\n  question = asked;\n} else if (unreadableQuestionAt == null) {\n  unreadableQuestionAt = Date.now();\n  unreadableQuestionId = tu.id || null;\n}",
+      "source": "git commit 60f0e1879b2434ffad4af82b337712052872d4d9, nejcar20/social-media-handler, author date 2026-10-13T11:17:23+02:00 = 2026-10-13 09:17:23 UTC. Three files: lib/claude-run.d.ts +36, lib/claude-run.js +166/-7, tests/claude-run.test.ts +133/-1",
+      "verified": "git fetch origin main 2026-10-19 by the Studio Lead; `git merge-base --is-ancestor 60f0e18 origin/main` exits 0 against origin/main = 6a4723a, so the commit is on main; the hunk above read with `git show 60f0e18 -- lib/claude-run.js`",
+      "on_screen_allowed": true,
+      "limit": "The commit is verified; its deployment is not. The words deployed, live, shipped and rolled out may not appear, no deploy time may appear, and the 11:55 delivery may never be edited as this commit's effect (see unverified)."
+    },
+    {
+      "id": "F6",
+      "claim": "The rewrite ships with tests, and they pass: 29 of 29 in that file, including one that feeds it the empty call.",
+      "exact_source_sentence": "ℹ tests 29\nℹ pass 29\nℹ fail 0",
+      "named_tests": [
+        "the empty-questions call normalises to nothing, which is what arms this",
+        "a result coming back means it was an invalid call, so the run continues",
+        "still outstanding after the grace period: nothing here can answer it, end the run",
+        "both Bash timeouts are raised well past the two-minute default"
+      ],
+      "source": "`npx tsx --tsconfig tsconfig.json --test tests/claude-run.test.ts` at commit 60f0e18 in a clean clone at /tmp/smh-fix, DATABASE_URL pointed at a dead port because the suite is pure",
+      "verified": "run 2026-10-19 by the Studio Lead; output read this run: tests 29, suites 5, pass 29, fail 0, cancelled 0, skipped 0, todo 0",
+      "on_screen_allowed": true,
+      "limit": "One test file at one commit, run on this host. Not the repository's full `npm run verify` and not a CI run. Say \"29 of 29\" with the file named, never \"all tests\" and never \"the build is green\"."
+    }
+  ],
+  "unverified": [
+    "The deployment of F5. our internal decision log records \"fix live 10:42 the same day\", which matches neither 09:17:23 UTC nor its local 11:17, and no deploy or release record was read, so no deploy time and no live/deployed/shipped wording appears anywhere.",
+    "The clock time of each founder sentence (F2).",
+    "Whether anything other than this commit contributed to the successful 11:55 render.",
+    "That the code running at 11:55 contained F5. The commit's author time precedes the delivery, which is an order, not a cause. The piece shows the three verified stamps in their verified order and never draws a causal arrow between them."
+  ],
+  "forbidden_on_screen": [
+    "any other Discord message or thread",
+    "customer names or customer data",
+    "credentials, tokens, file paths containing secrets",
+    "invented agent dialogue",
+    "a re-enacted, animated or implied test pass: only the counts actually produced this run (F6) may appear, and the file must be named beside them",
+    "the words deployed, live, shipped, rolled out, or any deploy time, including \"10:42\" (F5 limit)",
+    "a causal arrow, join or wipe between the commit and the 11:55 delivery",
+    "a rounded or restated version of any number above",
+    "\"1.68 MB\" (it appears inside F4's claim text; it is a rounded restatement and never goes on screen)",
+    "any counter, frame count, byte count or duration that is not copied from a claim above"
+  ],
+  "rulings": [
+    "Byte count: the screen shows `1679022 bytes`, the raw source string. Thousands separators are a restatement, so they are not used. Ruled by the Studio Lead 2026-10-19 after the storyboard critic flagged it.",
+    "F3 cites claude-run.js:630 in its source sentence and :631 in its verification. No line number appears on screen or in the copy; only the file name and the line's text, which were both read this run.",
+    "The frames inside the tile are the piece's own abstraction. F4 verifies that a 1679022-byte video/mp4 attachment existed, nothing about its contents, so the tile may never imitate the real video's pixels. Disclosed on the page, in post.txt and in alt.txt.",
+    "The revival may not be edited as the result of the fix. Amended 2026-10-19: the commit and its tests are now read and verified (F5, F6), but its deployment is not, and unverified items 3 and 4 still allow for other causes. So the piece places three verified stamps in their verified order — 08:53:00.940 dead, 09:17:23 the line rewritten, 11:55:54.668 the file — with no arrow, join or wipe between them, and both conditions stay lit under the second render. The order is shown; the cause is not claimed.",
+    "The film's single editorial line, `it was killed to ask nothing.`, is our wording, traced to F3 (`questions: []`, an empty question treated as a real one) and F1 (the run was ended, nothing was delivered). Declared editorial, not quoted as a source sentence.",
+    "The render's own duration is not verified, so no render length, frame count or percentage appears anywhere. The interactive dial's scale is a model and is labelled as one.",
+    "The clock never animates between the two verified timestamps: interpolating them would draw dozens of millisecond-precision UTC values that never existed. It cuts on the beat instead. Ruled 2026-10-19 after the second critic found 10:54:27.804 on screen.",
+    "No invented number is drawn inside the picture. The interactive dial's value is HTML chrome, a control the reader is moving, and the only timeout printed on the canvas is the measured 120 s.",
+    "The dial has exactly one evidenced position and it is 120 s. Re-ruled 2026-10-19 after QA found that any value below the render length wore `08:53:00.940 UTC` and `0 attachments` while the page said \"the run we actually have\" — 250 s was being dressed as evidence. The rule is now a single test, `dialSec === 120`, not a branch: at 120 the card wears the verified timestamp and the `0 attachments` chip and the page may call it the evidenced run; at every other value, on either side of the render, the header reads `model run`, there is no timestamp, there is no attachment row, and the page says this one was not measured. The dial snaps to 120 so the reader can always get back to the evidence. 11:55:54.668, video_post_en.mp4, 1679022 bytes and 3 h 2 min appear only in the film.",
+    "'3 hours' is never written anywhere, including UI copy: the replay button says 'Replay the 3 h 2 min'.",
+    "'an object, so truthy' in post.txt and the word 'truthy' on screen describe JavaScript's own semantics, not the incident, so they are not a second editorial claim about what happened.",
+    "The dial's render bar is drawn longer than the 120 s mark, which is the mechanism's premise (the render outlived the call). No duration is printed, and the page says in words that the handle is a model and only the orange mark is a measured value. Ruling 6 still holds: no render length is stated anywhere.",
+    "The code in the fix panel comes from `git show 60f0e18 -- lib/claude-run.js`. Exactly three things are done to it, all of them formatting: leading indentation is trimmed; long lines are wrapped (the removed line is drawn on two rows, as the mechanism has always drawn it); and braces are re-placed where a wrap forces it, so `if (asked) {` + `question = asked;` is drawn as `if (asked) { question = asked; }` and `} else if (...) {` loses its leading brace. The added block is also a subset: `opts.onQuestion`, `endOnQuestion` and `unreadableQuestionId` are not drawn. No token is renamed, paraphrased or invented, nothing is drawn that is not in the commit, and no line numbers appear (ruling 2 still holds). Note the deliberate inconsistency with the mechanism, which has always drawn `questions: [ ]` with a space to make the emptiness visible; the diff panel is character-exact at `questions: []`.",
+    "The test pass is shown as the counts the run actually printed — `tests 29`, `pass 29`, `fail 0` — beside the file that produced them, never as an animated ticking green check or a progress bar filling. One named test is quoted exactly from the run's output so a reader can grep for it. Ruled 2026-10-19 when F6 was added.",
+    "Numbers added with F5 and F6 join the copy rule: `09:17:23 UTC`, `60f0e18`, `29`, `0`. `60f0e18` is the short hash the repository's own log prints; the full hash is in F5's source. Never \"a few tests\", \"all tests\" or \"the build is green\".",
+    "The fix panel is on screen while the card behind it still reads `08:53:00.940 UTC` and `0 attachments`, at about a tenth of its brightness. Checked against the no-false-pairing rule and allowed: the card is an immutable record of a message that was posted, not a live clock, and it was still that message, still with no attachment, at 09:17:23. The pairing the rule exists to stop is the opposite case — `0 attachments` beside `11:55:54.668 UTC`, which would say the delivery arrived empty — and that one is still prevented by retiring the chip 24 frames before the clock cuts."
+  ],
+  "public_copy_note": "This is the public copy. Every claim, source description and verification method is unchanged from the locked original; internal tracker identifiers and local file paths are replaced with plain descriptions (our internal incident record, our internal decision log). No claim, number or quoted sentence was altered."
+}

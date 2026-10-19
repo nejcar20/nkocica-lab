@@ -1,1 +1,9 @@
-[]
+[
+ {
+  "slug": "founder-sentence",
+  "title": "The empty question that killed a render",
+  "line": "Drag the shell timeout and watch a render get orphaned.",
+  "date": "2026-10-19",
+  "preview": "final.mp4"
+ }
+]

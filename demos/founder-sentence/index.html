@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The empty question that killed a render</title>
+<style>
+@font-face{font-family:Mono;src:url(assets/mono.ttf);font-display:block}
+@font-face{font-family:Mono;src:url(assets/mono-b.ttf);font-weight:700;font-display:block}
+@font-face{font-family:Grot;src:url(assets/sans-b.ttf);font-weight:700;font-display:block}
+@font-face{font-family:Human;src:url(assets/human.ttf);font-style:italic;font-display:block}
+*{box-sizing:border-box}
+body{margin:0;background:#07090c;color:#cfd8e3;font:15px/1.6 Mono,ui-monospace,monospace;display:grid;justify-items:center}
+canvas{width:min(100vw,78vh);max-width:620px;height:auto;touch-action:none;display:block}
+main{width:min(100vw,620px);padding:18px 20px 44px}
+@media (min-width:1100px){
+  body{grid-template-columns:auto 520px;align-items:start;justify-content:center;gap:48px;padding:40px 0}
+  canvas{width:auto;height:min(88vh,1100px);max-width:none}
+  main{width:520px;padding:0 0 40px}
+  h1{margin-top:0}
+}
+h1{font:700 19px Grot,system-ui;margin:16px 0 2px;color:#f4ece0}
+p.k{margin:4px 0 0;color:#8e9cad}
+.dial{margin:16px 0 6px;user-select:none;touch-action:none}
+.track{position:relative;height:64px;border:1px solid #27313d;border-radius:12px;background:#11161d;touch-action:none}
+.fill{position:absolute;top:1px;bottom:1px;left:1px;background:linear-gradient(90deg,#161d25,#26303f);border-radius:11px 0 0 11px}
+.knob:focus-visible{outline:3px solid #ffb24a;outline-offset:3px}
+.knob{position:absolute;top:-6px;width:62px;height:76px;border-radius:14px;background:#f4ece0;border:1px solid #0b0e12;
+  box-shadow:0 8px 22px #0009;display:grid;place-items:center;color:#0b0e12;font:700 15px Mono;cursor:grab;touch-action:none}
+.mark{position:absolute;top:0;bottom:0;width:2px;background:#ffb24a}
+.mark span{position:absolute;top:-26px;left:-14px;color:#ffb24a;font:14px Mono;white-space:nowrap}
+.dial{margin-top:32px}
+.state{min-height:4.4em;margin:12px 0 0;color:#f4ece0}
+.state b{color:#ff5a40;font-weight:400}
+.state i{color:#ffb24a;font-style:normal}
+button{font:15px Mono;padding:12px 16px;border:1px solid #27313d;border-radius:10px;background:#11161d;color:#cfd8e3;cursor:pointer}
+button:hover{border-color:#6b7a8c}
+small{color:#6b7a8c;display:block;margin-top:20px;line-height:1.7}
+a{color:#ffb24a}
+</style>
+
+<canvas id="c" role="img"
+  aria-label="A bot's message, whole and still: it says the run stopped to ask a question, the question slot is empty, and the attachment row reads 0 attachments. The film cuts back to the render being written frame by frame into a contact sheet; it stops mid-frame. The founder asks for a fix. Underneath, a 120 second shell timeout pushes the render into the background and an empty question is read as a real one, so exit 129 reaches across the gap and kills it. A panel then shows the commit that rewrote that line, 60f0e18 at 09:17:23 UTC, with the old line struck through, the new lines in its place, and the test file reporting tests 29, pass 29, fail 0. The panel leaves and both causes are still lit. 3 h 2 min after the dead message the same flow writes a full sheet and posts a playable file."></canvas>
+
+<main>
+  <h1>Drag the shell timeout.</h1>
+  <p class="k">Two things had to be true at once. This handle is the first one: the call that started the render
+    gave up before the render was done. The handle is a model, not a measurement — only the orange mark is a
+    value we read.</p>
+  <div class="dial">
+    <div class="track" id="track">
+      <div class="fill" id="fill"></div>
+      <div class="mark" id="mark"><span>120 s · the real run</span></div>
+      <div class="knob" id="knob" role="slider" tabindex="0" aria-label="Shell timeout, a model value in seconds"
+           aria-valuemin="0" aria-valuemax="600" aria-valuenow="120" aria-valuetext="120 seconds">120 s</div>
+    </div>
+  </div>
+  <p class="state" id="state"></p>
+  <button id="replay">Replay the 3 h 2 min</button>
+  <small>
+    A model of the two causes recorded in our own incident, not a reproduction. The commit in the replay is real and
+    was read for this piece — <b>60f0e18</b> on main, authored 2026-10-13 09:17:23 UTC — and its 29 tests were run
+    here, on this machine, the day this was built. What is <i>not</i> verified is its deployment: no release record
+    was read, so the piece never says the fix was live, and never joins it to the delivery that follows it.
+    Dragging this handle changes the mechanism only; it cannot produce the second delivery, because what a longer
+    timeout would have done is not something we measured. The one delivery that is evidenced — 11:55:54.668 UTC,
+    video_post_en.mp4, 1679022 bytes, 3 h 2 min later — appears only in the replay, as a separate, later run.
+    The frames in the tile are a stylised stand-in; the posted video's own pixels are not reproduced. Every word
+    and number drawn on the card comes from <a href="facts.json">facts.json</a> ·
+    <a href="storyboard.md">storyboard</a> · @NKocica
+  </small>
+</main>
+
+<script src="timing.js"></script>
+<script>
+const T = window.TIMING, K = T.hits, K2 = T.secondary, FR = Math.round(T.seconds * T.fps);
+const qs = new URLSearchParams(location.search);
+const WIDE = qs.get('fmt') === 'wide';                      // the 16:9 recompose: same world, groups rearranged
+const W = WIDE ? 1920 : 1080, H = WIDE ? 1080 : 1350;
+const canvas = document.getElementById('c'), g = canvas.getContext('2d', { alpha: false });
+canvas.width = W; canvas.height = H;
+
+/* Six colours and their tints, derived from the artefact: a dark render monitor, amber while it writes. */
+const C = { ink:'#07090c', panel:'#11161d', panel2:'#171e27', edge:'#27313d', slate:'#6b7a8c',
+            slate2:'#8e9cad', amber:'#ffb24a', amberDim:'#8a5f28', bone:'#f4ece0', red:'#ff5a40', black:'#04060a' };
+
+/* ---- maths ---------------------------------------------------------------------------------- */
+const cl = (x, a=0, b=1) => x < a ? a : x > b ? b : x;
+const at = (f, s, d) => cl((f - s) / d);
+const ss = x => { x = cl(x); return x*x*(3-2*x); };
+const eo = x => 1 - Math.pow(1 - cl(x), 3);
+const land = x => x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.exp(-7*x) * Math.cos(9.2*x);   // arrives with weight
+const mix = (a, b, t) => a + (b - a) * cl(t);
+const hex = (c1, c2, t) => {
+  const p = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+  const [r1,g1,b1] = p(c1), [r2,g2,b2] = p(c2);
+  return `rgb(${Math.round(mix(r1,r2,t))},${Math.round(mix(g1,g2,t))},${Math.round(mix(b1,b2,t))})`;
+};
+
+/* ---- primitives ----------------------------------------------------------------------------- */
+function rr(x, y, w, h, r, fill, stroke, lw=2) {
+  g.beginPath(); g.roundRect(x, y, w, h, r);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); }
+}
+function tx(s, x, y, size, color=C.bone, font='Mono', align='left', weight='') {
+  g.font = `${weight} ${size}px ${font}`.trim(); g.textAlign = align; g.fillStyle = color; g.fillText(s, x, y);
+  return g.measureText(s).width;
+}
+const wd = (s, size, font='Mono', weight='') => { g.font = `${weight} ${size}px ${font}`.trim(); return g.measureText(s).width; };
+function glow(color, blur, fn) { g.save(); g.shadowColor = color; g.shadowBlur = blur; fn(); g.restore(); }
+function line(pts, color, lw, cap='round') {
+  if (pts.length < 2) return;
+  g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+  for (const p of pts.slice(1)) g.lineTo(p[0], p[1]);
+  g.strokeStyle = color; g.lineWidth = lw; g.lineCap = cap; g.lineJoin = 'round'; g.stroke();
+}
+
+/* ---- the artefact: a render, written one frame at a time -------------------------------------
+   The tile is a contact sheet: 48 cells, each a different picture from one continuous move, laid
+   down in reading order by a raster head. That is what makes it a render and not a progress bar —
+   every cell holds its own picture, the head paints top to bottom inside the cell it is on, and an
+   interrupted render leaves one frame cut in half. Built once at load; afterwards only clipped and
+   blitted, so a phone holds 60 fps. The pictures are this piece's own abstraction: F4 verifies that
+   a 1679022-byte mp4 existed, nothing about what was in it. */
+const SH = { w: 808, h: 454, cols: 8, rows: 6 };
+SH.n = SH.cols * SH.rows; SH.cw = SH.w / SH.cols; SH.ch = SH.h / SH.rows;
+const sheetLive = document.createElement('canvas'), sheetDim = document.createElement('canvas');
+function cellBox(i) {                                        // thumb rect of frame i, 16:9 inside its cell
+  const cx = (i % SH.cols) * SH.cw, cy = Math.floor(i / SH.cols) * SH.ch;
+  const w = SH.cw - 10, h = w * 9 / 16;
+  return { x: cx + 5, y: cy + (SH.ch - h) / 2, w, h };
+}
+function drawThumb(x, p, b) {                                // one frame of the rendered move, p = 0..1
+  const { x: bx, y: by, w, h } = b;
+  x.save(); x.beginPath(); x.rect(bx, by, w, h); x.clip();
+  const sky = x.createLinearGradient(0, by, 0, by + h);
+  sky.addColorStop(0, '#0a0e14'); sky.addColorStop(1, '#141017'); x.fillStyle = sky; x.fillRect(bx, by, w, h);
+  const hy = by + h * (0.74 - 0.16 * Math.sin(p * 3.1));     // the horizon tilts through the move
+  const gl = x.createLinearGradient(0, hy - h * 0.5, 0, hy);
+  gl.addColorStop(0, 'rgba(255,178,74,0)'); gl.addColorStop(1, `rgba(255,178,74,${0.3 + 0.25 * Math.sin(p * 6.3)})`);
+  x.fillStyle = gl; x.fillRect(bx, by, w, h);
+  x.strokeStyle = '#ffd9a0'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(bx, hy); x.lineTo(bx + w, hy); x.stroke();
+  x.beginPath();                                             // one luminous ribbon, advancing per frame
+  for (let i = 0; i <= 18; i++) {
+    const u = i / 18, px = bx + u * w;
+    const py = hy - h * (0.12 + 0.34 * Math.sin(u * 4.2 + p * 7.4)) * (0.4 + 0.6 * u);
+    i ? x.lineTo(px, py) : x.moveTo(px, py);
+  }
+  x.strokeStyle = '#ffb24a'; x.lineWidth = 2.6; x.shadowColor = '#ffb24a'; x.shadowBlur = 7; x.stroke();
+  x.shadowBlur = 0;
+  const ox = bx + w * (0.1 + 0.8 * p), oy = hy - h * (0.3 + 0.2 * Math.sin(p * 9));
+  x.fillStyle = '#fff6e8'; x.beginPath(); x.arc(ox, oy, Math.max(1.6, w * 0.035), 0, 7); x.fill();
+  x.fillStyle = `rgba(255,178,74,.5)`; x.beginPath(); x.arc(ox, oy, w * 0.09, 0, 7); x.fill();
+  x.restore();
+}
+function buildSheet() {
+  for (const cv of [sheetLive, sheetDim]) { cv.width = SH.w; cv.height = SH.h; }
+  const a = sheetLive.getContext('2d');
+  a.fillStyle = C.black; a.fillRect(0, 0, SH.w, SH.h);
+  for (let i = 0; i < SH.n; i++) drawThumb(a, i / (SH.n - 1), cellBox(i));
+  const d = sheetDim.getContext('2d');                       // the same frames with the backlight gone
+  d.drawImage(sheetLive, 0, 0);
+  const im = d.getImageData(0, 0, SH.w, SH.h);
+  for (let i = 0; i < im.data.length; i += 4) {
+    const l = 0.3 * im.data[i] + 0.56 * im.data[i+1] + 0.14 * im.data[i+2];
+    im.data[i]   = Math.round(l * 0.40 + 9);
+    im.data[i+1] = Math.round(l * 0.47 + 12);
+    im.data[i+2] = Math.round(l * 0.58 + 16);
+  }
+  d.putImageData(im, 0, 0);
+}
+
+/* Deterministic grain: three tiles chosen and offset by frame, so no frame is numerically identical. */
+const grains = [];
+function buildGrain() {
+  let s = 2026; const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  for (let k = 0; k < 3; k++) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+    const cx = cv.getContext('2d'), im = cx.createImageData(256, 256);
+    for (let i = 0; i < 256 * 256; i++) {
+      const n = Math.round(rnd() * 255);
+      im.data[i*4] = im.data[i*4+1] = im.data[i*4+2] = n; im.data[i*4+3] = 14;
+    }
+    cx.putImageData(im, 0, 0); grains.push(cv);
+  }
+}
+
+/* ---- world geometry -------------------------------------------------------------------------- */
+const CARD = { x: 72, y: 230, w: 936, head: 140, bodyH: 334 };
+const cardParts = collapse => {
+  const bodyH = CARD.bodyH * (1 - collapse);
+  const tileY = CARD.y + CARD.head + bodyH + 12;
+  const rowY = tileY + SH.h + 26;
+  return { bodyH, tileY, rowY, h: rowY + 64 + 24 - CARD.y };
+};
+const MECH = { x0: 96, x1: 984, bar: 712, ry: 970 };
+
+/* ---- group transforms (this is the recompose: nothing is cropped, the groups move) ------------ */
+function groups(st) {
+  if (!WIDE) return { card: { s: st.cardScale, ox: 540, oy: 686 + st.cardDY, rx: 540, ry: 686 },
+                      mech: { s: 1, ox: 540, oy: MECH.ry, rx: 540, ry: MECH.ry } };
+  /* 16:9: the card owns the whole frame until there is machinery to put beside it, then slides left */
+  const m = ss(st.mech);
+  return { card: { s: mix(0.80, 0.66, m), ox: mix(960, 516, m), oy: mix(540, 500, m), rx: 540, ry: 686 },
+           mech: { s: 0.80, ox: 1372, oy: 536, rx: 540, ry: MECH.ry } };
+}
+const gpt = (G, x, y) => [G.ox + (x - G.rx) * G.s, G.oy + (y - G.ry) * G.s];
+function useGroup(G) { g.translate(G.ox, G.oy); g.scale(G.s, G.s); g.translate(-G.rx, -G.ry); }
+
+/* ---- state from the timeline ----------------------------------------------------------------- */
+function sceneState(f) {
+  const st = { f, written: 0, head: 0, dim: 0, ghost: 0, kill: 0, collapse: 1, cardScale: 1, cardDY: 0,
+               body: 0, bodyFade: 1, attach: 'none', zero: 0, file: 0, line: 0, notes: [0, 0], track: 0,
+               mech: 0, mechAlpha: 1, timeoutLit: 0, detach: 0, env: 0, fall: 0, flip: 0, exitRun: 0,
+               late: 0, cut: 0, delta: 0, play: 0, sign: 0, mechScale: 1, modelRun: 0,
+               fix: 0, strike: 0, swap: 0, tests: 0 };
+
+  /* 0. the cold open. Frame 0 is the evidence itself: the thing it posted instead of a video, whole and
+     still — the question it could not print, and `0 attachments`. Nothing is explained yet. Added
+     2026-10-19 for QA item 4, which found frame 0 reading as a bot and a contact sheet. */
+  if (f < K.coldCut) {
+    st.written = 0.62; st.head = 0; st.dim = 1; st.track = 1;
+    st.collapse = 0; st.body = 1; st.bodyFade = 1;
+    st.attach = 'zero'; st.zero = 1;
+    const G0 = groups(st);
+    const c0 = gpt(G0.card, 540, CARD.y + cardParts(0).h / 2);
+    /* still, but never frozen. An ease-out push means the picture is already moving on frame one, so the
+       "motion within one second" line is met by the opening itself and not by the cut that ends it. The
+       caret in the empty slot blinks underneath it. */
+    st.cam = { s: 1 + 0.028 * eo(at(f, 0, K.coldCut)), px: W / 2, py: WIDE ? H / 2 : c0[1],
+               ax: W / 2, ay: H / 2 };
+    return st;
+  }
+
+  /* 1-2. the render writes, then stops mid-frame. Written frames stay written; the light goes out,
+     and the head twitches once before it gives up, so the hold is not a freeze. */
+  st.written = 0.60 + 0.05 * eo(at(f, K.coldCut, K.writeStop - K.coldCut));
+  st.head = f < K.writeStop ? 1 : (f >= K2.twitch && f < K2.twitch + 6 ? 0.7 : 0);
+  st.dim = ss(at(f, K.writeStop + 4, K2.dimEnd - K.writeStop - 4));
+  st.track = ss(at(f, K.pullback, 40));
+
+  /* 3. the card unfolds downwards and shows what it posted instead of a video */
+  st.collapse = 1 - ss(at(f, K.pullback, 72));
+  st.body = at(f, K.bodyType, 84);
+  st.zero = land(at(f, K.zeroAttachments, 26)) * (1 - ss(at(f, K.clockCut - 24, 24)));
+  if (f >= K.zeroAttachments && f < K.clockCut) st.attach = 'zero';
+  st.line = ss(at(f, K.lineIn, 26)) * (1 - ss(at(f, K.lineOut, 26)));
+  st.notes = [land(at(f, K.founderOne, 30)), land(at(f, K.founderTwo, 30))];
+  /* the frame leads the note instead of following it: `land` overshoots fast, so a camera driven by the
+     note's own progress was still 22 px behind when the plate crossed the top 40 px (QA) */
+  st.notesCam = ss(at(f, K.founderOne - 18, 24));
+
+  /* 4. the machinery. The detached render gets its own cold language and never goes amber again,
+     so nothing here can be read as the bug un-happening. */
+  const open = ss(at(f, K.cardOpen, 36));
+  st.mech = ss(at(f, K.cardOpen + (WIDE ? 36 : 18), 36));   // in 16:9 the card clears first
+  st.collapse = Math.max(st.collapse, open);
+  st.bodyFade = 1 - ss(at(f, K.cardOpen, 30));
+  st.cardScale = mix(1, 0.86, open);
+  st.cardDY = mix(0, -262, open);
+  if (f >= K.cardOpen) {
+    st.ghost = ss(at(f, K.cardOpen + 18, 30));
+    /* The notes go out quickly, but the frame returns at the card's own pace. Driving both from `open`
+       lifted the camera while a note was still lit, which dragged the founder's own sentence off the top
+       edge for 8 frames (QA). The quote is verified text: it leaves cleanly or not at all. */
+    st.notesCam *= (1 - open);
+    st.notes = st.notes.map(n => n * (1 - ss(at(f, K.cardOpen, 12))));
+    /* it is still writing while detached, slowly and in cold light: running, with nobody holding it */
+    st.written = 0.65 + 0.028 * at(f, K.cardOpen, K.exitKill - K.cardOpen);
+    st.head = st.ghost;
+  }
+  st.timeoutLit = ss(at(f, K.timeoutMark, 20));
+  st.detach = land(at(f, K.detach, 34));
+  st.env = land(at(f, K.envelope, 30));
+  st.fall = ss(at(f, K.fallback, 30));
+  st.flip = land(at(f, K.branchFlip, 22));
+  st.exitRun = eo(at(f, K.exitKill, 26));
+  if (f >= K.exitKill + 16) { st.ghost = 0; st.kill = ss(at(f, K.exitKill + 16, 12)); }
+
+  /* 4b. the fix beat. The commit and its tests are read and verified (F5, F6), so they may be shown —
+     but the incident underneath is not edited by them. The panel sits over the world, the kill chain
+     stays lit behind it, and nothing joins this to the delivery that follows (ruling 4). */
+  st.fix = ss(at(f, K.fixIn, 30)) * (1 - ss(at(f, K.fixOut, 30)));
+
+  /* 5. the clock cuts — it never rolls through times that did not happen — and the same flow
+     writes a second, separate sheet while both causes stay on screen, unchanged. */
+  st.late = f >= K.clockCut ? 1 : 0;
+  st.cut = ss(at(f, K.clockCut - 6, 6)) * (1 - ss(at(f, K.clockCut, 6)));
+  st.delta = land(at(f, K.clockCut, 30));
+  if (f >= K.clockCut) {
+    st.dim = 0; st.kill = 0; st.ghost = 0; st.attach = 'none'; st.written = 0; st.head = 0;
+  }
+  if (f >= K2.refillStart) {
+    const p = eo(at(f, K2.refillStart, K.fileLands - K2.refillStart - 6));
+    st.written = p; st.head = p < 1 ? 1 : 0;
+  }
+  if (f >= K.fileLands) { st.attach = 'file'; st.file = land(at(f, K.fileLands, 34)); st.written = 1; st.head = 0; }
+  st.play = ss(at(f, K2.playFrom, 36));
+  st.sign = ss(at(f, K.resolve, 40));
+  st.mechAlpha = mix(1, 0.32, ss(at(f, K2.pushIn, 48)));
+  st.mechScale = mix(1, 0.8, ss(at(f, K2.pushIn, 60)));
+
+  /* camera: the compact card fills frame one, it unfolds, one slow push across the card scenes,
+     identity over the machinery, and a push back into the card as the file lands */
+  const back = ss(at(f, K.pullback, 72));
+  const creep = 0.03 * ss(at(f, K.writeStop, K.pullback - K.writeStop));
+  const breathe = (WIDE ? 0 : 0.04) * ss(at(f, K.pullback + 72, 324)) * (1 - open);
+  const G = groups(st);
+  const compact = gpt(G.card, 540, CARD.y + cardParts(1).h / 2);
+  const cardC = gpt(G.card, 540, CARD.y + cardParts(st.collapse).h / 2);
+  /* no push at the end: the two causes have to stay in frame while the second render completes */
+  const endBreath = 0.005 * Math.sin((f - K2.pushIn) * 0.028) * ss(at(f, K2.pushIn, 40));
+  const notesUp = st.notesCam ?? Math.max(st.notes[0], st.notes[1]);  // the frame makes room for what lands on it
+  st.cam = { s: mix(1.18 + creep, 1 + breathe + endBreath, back),
+             px: mix(compact[0], W / 2, back),
+             py: mix(compact[1], WIDE ? H / 2 : mix(cardC[1], H / 2, open), back) - (WIDE ? 0 : 86) * cl(notesUp),
+             ax: W / 2, ay: H / 2 };
+  return st;
+}
+
+/* ---- state from the dial (the playable page) -------------------------------------------------- */
+const DIAL_MAX = 600, RENDER_SEC = 300, EVIDENCED = 120;
+let dialSec = EVIDENCED;                                     // first load: the run we measured. Drag it to model
+const atEvidence = () => Math.abs(dialSec - EVIDENCED) < 0.5;
+function dialState(t) {
+  const detached = dialSec < RENDER_SEC;
+  const k = sceneState(FR - 1);
+  k.dialMode = true; k.dialSec = dialSec; k.renderSec = RENDER_SEC;
+  k.line = 0; k.notes = [0, 0]; k.sign = 1; k.body = 0; k.track = 1; k.mechAlpha = 1;
+  k.mech = 1; k.collapse = 1; k.cardScale = 0.86; k.cardDY = -262;
+  k.timeoutLit = 1; k.env = 1; k.fall = 1; k.flip = 1; k.exitRun = 1;
+  /* Ruling 9. Exactly one position on this dial is evidence and it is the measured 120 s. Everywhere else,
+     on either side of the render, is a model: no verified timestamp, no attachment row, nothing the reader
+     could mistake for something we saw. The second render with its file, its 11:55 stamp and its byte count
+     exists only in the film. This is one test on the value, never a branch on the mechanism. */
+  const real = atEvidence();
+  k.late = 0; k.delta = 0; k.file = 0; k.play = 0; k.cut = 0;
+  k.modelRun = real ? 0 : 1;
+  if (detached) {                                            /* both conditions true: the render is taken */
+    k.detach = 1; k.written = 0.62; k.head = 0; k.dim = 1; k.ghost = 0; k.kill = 1;
+    k.attach = real ? 'zero' : 'none'; k.zero = real ? 1 : 0;
+  } else {                                                   /* the call outlives the render: nothing to take */
+    k.detach = 0; k.written = 1; k.head = 0; k.dim = 0; k.ghost = 0; k.kill = 0;
+    k.attach = 'none'; k.zero = 0;
+  }
+  k.cam = { s: 1, px: W / 2, py: H / 2, ax: W / 2, ay: H / 2 };
+  return k;
+}
+
+/* ---- drawing: the card ------------------------------------------------------------------------ */
+function drawSheet(st, t, x, y) {
+  g.save(); g.beginPath(); g.roundRect(x, y, SH.w, SH.h, 10); g.clip();
+  g.fillStyle = C.black; g.fillRect(x, y, SH.w, SH.h);
+  const done = st.written * SH.n, n = Math.floor(done + 1e-6), frac = done - n;
+  if (st.track > 0.01) {                                     /* cell outlines appear only after the reveal */
+    g.globalAlpha = 0.07 * st.track; g.strokeStyle = C.slate; g.lineWidth = 1;
+    for (let i = 0; i < SH.n; i++) { const b = cellBox(i); g.strokeRect(x + b.x, y + b.y, b.w, b.h); }
+    g.globalAlpha = 1;
+  }
+  const blit = (clipFn) => { g.save(); clipFn(); g.drawImage(sheetLive, x, y);
+    if (st.dim > 0) { g.globalAlpha = st.dim; g.drawImage(sheetDim, x, y); g.globalAlpha = 1; }
+    if (st.kill > 0) { g.fillStyle = `rgba(4,6,10,${0.92 * st.kill})`; g.fillRect(x, y, SH.w, SH.h); }
+    g.restore(); };
+  if (n > 0) blit(() => {                                    /* every finished frame */
+    g.beginPath();
+    for (let i = 0; i < Math.min(n, SH.n); i++) { const b = cellBox(i); g.rect(x + b.x, y + b.y, b.w, b.h); }
+    g.clip();
+  });
+  if (n < SH.n && frac > 0) {                                /* the frame the head is on, painted so far */
+    const b = cellBox(n), cut = b.h * frac;
+    blit(() => { g.beginPath(); g.rect(x + b.x, y + b.y, b.w, cut); g.clip(); });
+    const ly = y + b.y + cut;
+    if (st.head > 0.02) glow(st.ghost > 0.3 ? '#9fc4e0' : C.amber, 22 * st.head, () => {
+      g.fillStyle = st.ghost > 0.3 ? '#cfe4f4' : C.bone;
+      g.globalAlpha = st.head * (0.7 + 0.3 * Math.sin(t * (st.ghost > 0.3 ? 9 : 31)));
+      g.fillRect(x + b.x, ly - 1.5, b.w, 3); g.globalAlpha = 1;
+    });
+    else { g.fillStyle = `rgba(107,122,140,${0.5 + 0.3 * Math.sin(t * 6)})`; g.fillRect(x + b.x, ly - 1, b.w * 0.4, 2); }
+  }
+  /* the detached render, still going with nobody holding it: cold outlines, never amber again */
+  if (st.ghost > 0.01) {
+    const pulse = 0.3 + 0.22 * Math.sin(t * 3.4);
+    g.save(); g.globalAlpha = st.ghost * pulse; g.strokeStyle = '#9fc4e0'; g.lineWidth = 2;
+    for (let i = 0; i < Math.min(n + 1, SH.n); i++) { const b = cellBox(i); g.strokeRect(x + b.x, y + b.y, b.w, b.h); }
+    g.restore();
+  }
+  if (st.kill > 0.02) {                                      /* the kill lands on the sheet itself */
+    g.save(); g.globalAlpha = 1 - st.kill; g.strokeStyle = C.red; g.lineWidth = 6;
+    g.strokeRect(x + 3, y + 3, SH.w - 6, SH.h - 6); g.restore();
+  }
+  if (st.play > 0) {                                         /* it plays: one pass of light, always moving */
+    const p = ((t * 0.62) % 1) * (SH.w + 420) - 210;
+    const lg = g.createLinearGradient(x + p - 210, 0, x + p + 210, 0);
+    lg.addColorStop(0, 'rgba(255,246,232,0)'); lg.addColorStop(0.5, `rgba(255,246,232,${0.3 * st.play})`);
+    lg.addColorStop(1, 'rgba(255,246,232,0)');
+    g.fillStyle = lg; g.fillRect(x, y, SH.w, SH.h);
+  }
+  g.restore();
+  if (st.track > 0.02) rr(x, y, SH.w, SH.h, 10, null,
+    hex(C.edge, st.dim > 0.5 ? C.edge : C.amberDim, st.track * (1 - st.dim)), 2);
+}
+
+function drawCard(st, t) {
+  const p = cardParts(st.collapse), x = CARD.x, y = CARD.y, w = CARD.w;
+  const press = st.notes[0] * 5 + st.notes[1] * 4;
+  g.save(); g.translate(0, press);
+  glow('rgba(0,0,0,.85)', 54, () => rr(x, y + 12, w, p.h, 24, C.panel));
+  rr(x, y, w, p.h, 24, C.panel, C.edge, 2);
+
+  /* who posted it, rebuilt: a mark, the name, the date and the UTC time. No avatar, no thread.
+     The evidence sits on its own row so it can be read at 44 px instead of squeezed next to the name. */
+  rr(x + 34, y + 14, 56, 56, 14, hex(C.amberDim, C.panel2, st.dim * 0.85), C.edge, 2);
+  line([[x + 48, y + 56], [x + 57, y + 30], [x + 66, y + 56], [x + 77, y + 30]], hex(C.amber, C.slate, st.dim), 5);
+  tx('Social Media Manager', x + 108, y + 56, 40, C.bone, 'Grot', 'left', '700');
+  tx('13 Oct 2026', x + 108, y + 110, 42, C.slate2, 'Mono');
+  /* the time cuts, it never rolls: every intermediate value would be a timestamp that did not happen */
+  g.save(); if (st.cut > 0.02) g.globalAlpha = 1 - st.cut * 0.7;
+  tx(st.modelRun ? 'model run' : st.late ? '11:55:54.668 UTC' : '08:53:00.940 UTC',
+     x + w - 34, y + 110, 46, st.modelRun ? C.slate2 : C.bone, 'Mono', 'right');
+  g.restore();
+  if (st.delta > 0) {                                        /* the gap, on the card's own header row */
+    g.save(); g.globalAlpha = cl(st.delta);
+    const s = mix(1.35, 1, cl(st.delta)); g.translate(x + w - 34, y + 56); g.scale(s, s);
+    tx('+3 h 2 min', 0, 0, 48, C.amber, 'Mono', 'right');
+    g.restore();
+  }
+
+  /* the posted body, word for word, with the question slot sitting empty beside its own caveat */
+  if (p.bodyH > 2 && st.bodyFade > 0.01) {
+    g.save(); g.beginPath(); g.rect(x, y + CARD.head, w, p.bodyH); g.clip();
+    g.translate(0, -(CARD.bodyH - p.bodyH) * 0.55);            // it folds back up into the header
+    const vis = cl(p.bodyH / CARD.bodyH) * st.bodyFade;
+    g.globalAlpha = vis;
+    const a = 'The run stopped to ask a question', b = '(it cannot answer itself, so it was ended)';
+    const ch = Math.round(st.body * (a.length + b.length));
+    tx(a.slice(0, ch), x + 38, y + 190, 46, C.bone, 'Grot', 'left', '700');
+    if (ch > a.length) tx(b.slice(0, ch - a.length), x + 38, y + 234, 34, C.slate2);
+    if (st.body > 0.55) {
+      g.globalAlpha = ss((st.body - 0.55) / 0.3) * vis;
+      rr(x + 38, y + 254, w - 76, 62, 10, 'rgba(4,6,10,.55)', C.edge, 2);
+      g.fillStyle = `rgba(142,156,173,${0.5 + 0.5 * Math.sin(t * 7)})`; g.fillRect(x + 60, y + 270, 3, 32);
+      tx('(the question text could', x + 38, y + 362, 40, C.slate2, 'Mono');
+      tx('not be read from the', x + 38, y + 406, 40, C.slate2, 'Mono');
+      tx('session log)', x + 38, y + 450, 40, C.slate2, 'Mono');
+    }
+    g.restore();
+  }
+
+  drawSheet(st, t, x + 64, p.tileY);
+
+  /* what was delivered: nothing, and later a file */
+  if (st.attach === 'zero' && st.zero > 0) {
+    g.save(); g.globalAlpha = cl(st.zero);
+    const s = mix(1.12, 1, cl(st.zero)); g.translate(x + 64, p.rowY); g.scale(s, s);
+    rr(0, 0, 400, 70, 12, 'rgba(4,6,10,.5)', C.edge, 2);
+    tx('0 attachments', 22, 49, 46, C.slate2);
+    g.restore();
+  }
+  if (st.attach === 'file' && st.file > 0) {
+    g.save(); g.globalAlpha = cl(st.file);
+    g.translate(x + 64, p.rowY + (1 - cl(st.file)) * 16);
+    rr(0, 0, 808, 74, 12, 'rgba(255,178,74,.09)', C.amberDim, 2);
+    line([[26, 37], [48, 37]], C.amber, 5); line([[37, 26], [37, 48]], C.amber, 5);
+    tx('video_post_en.mp4', 66, 52, 40, C.bone);
+    tx('1679022 bytes', 488, 52, 40, C.amber);
+    g.restore();
+  }
+  g.restore();
+}
+
+/* ---- drawing: the machinery under the card ----------------------------------------------------
+   Read top to bottom: the call that started the render and where it gave up, the render that ran
+   past it, the empty question, the fallback that handed on something solid, the kill, and the kill
+   reaching back across the gap it should never have been able to cross. */
+function drawMech(st, t) {
+  if (st.mech <= 0.01) return;
+  const x0 = MECH.x0, x1 = MECH.x1, span = x1 - x0;
+  const yCall = 716, yRend = 782, yEnv = 858, yCode = 1000, yGate = 1022, ySolid = 1104, yKill = 1196,
+        yExit = 1282;
+  g.save(); g.globalAlpha = cl(st.mech) * cl(st.mechAlpha ?? 1); g.translate(0, (1 - ss(st.mech)) * 54);
+  if ((st.mechScale ?? 1) < 1) { const k = st.mechScale; g.translate(540, MECH.ry); g.scale(k, k); g.translate(-540, -MECH.ry); }
+  const callEnd = x0 + span * cl((st.dialMode ? st.dialSec : 120) / (st.dialMode ? DIAL_MAX : 240));
+  const renderEnd = st.dialMode ? x0 + span * cl(st.renderSec / DIAL_MAX) : x1 - 30;
+  const lit = st.timeoutLit, drop = 66 * st.detach, cut = Math.min(callEnd, renderEnd);
+
+  /* the call that started the render, and the mark where it gives up */
+  rr(x0, yCall, span, 14, 7, C.panel2);
+  rr(x0, yCall, Math.max(8, callEnd - x0), 14, 7, C.slate);
+  glow(C.amber, 20 * lit, () => line([[callEnd, yCall + 6], [callEnd, yRend + 34]], hex(C.edge, C.amber, lit), 4));
+  tx('the call', x0, yCall - 16, 40, C.slate2);
+  /* only the measured value is ever printed here: on the page the knob is the control, not a claim */
+  if (!st.dialMode) {
+    const flipLab = callEnd > x1 - 220;
+    tx('120 s', callEnd + (flipLab ? -16 : 16), yCall - 14, 44, hex(C.slate, C.amber, lit), 'Mono',
+       flipLab ? 'right' : 'left');
+  }
+
+  /* the render ran past it, so its tail was left in the background with the tether cut */
+  rr(x0, yRend, Math.max(6, cut - x0), 20, 10, hex(C.amber, C.amberDim, st.detach * 0.45));
+  tx('the render', x0, yRend - 12, 40, C.slate2);
+  if (renderEnd > cut + 4) {
+    const killed = st.exitRun > 0.66;
+    if (st.detach > 0.05) {                                  /* where the tail would have stayed */
+      g.save(); g.globalAlpha = 0.5 * st.detach; g.setLineDash([9, 9]);
+      rr(cut, yRend, renderEnd - cut, 20, 10, null, C.edge, 2); g.setLineDash([]); g.restore();
+    }
+    g.save(); g.translate(16 * st.detach, drop);
+    /* once it is detached it is drawn cold, never amber: it is running, but nobody is holding it */
+    rr(cut, yRend, renderEnd - cut, 20, 10, killed ? C.black : hex(C.amber, '#9fc4e0', st.detach));
+    if (killed) rr(cut, yRend, renderEnd - cut, 20, 10, null, C.red, 2);
+    if (st.detach > 0.12) tx('background', renderEnd, yRend + 62, 40, killed ? C.red : C.slate2, 'Mono', 'right');
+    g.restore();
+    if (st.detach > 0.04) {                                  /* the tether, cut, frayed on both sides */
+      g.save(); g.globalAlpha = 0.9;
+      line([[cut, yRend + 20], [cut, yRend + 20 + 10 * st.detach]], C.edge, 3);
+      line([[cut + 16, yRend + drop - 10 * st.detach], [cut + 16, yRend + drop]], C.edge, 3);
+      g.restore();
+    }
+  }
+
+  /* the empty question arrives and drops into the fallback */
+  if (st.env > 0.01 && st.fall < 0.55) {
+    const s = mix(1.14, 1, cl(st.env)) * (1 - 0.16 * ss(st.fall));
+    g.save(); g.globalAlpha = cl(st.env) * (1 - ss(st.fall * 1.9)) * cl(st.mechAlpha ?? 1);
+    g.translate(x0 + mix(-150, 0, cl(st.env)) + 30 * ss(st.fall), yEnv + 64 * ss(st.fall));
+    g.scale(s, s);
+    rr(0, 0, 436, 106, 14, 'rgba(4,6,10,.55)', C.edge, 2);
+    tx('AskUserQuestion', 22, 42, 40, C.slate2);
+    tx('questions: [ ]', 22, 88, 40, C.bone);
+    g.fillStyle = `rgba(244,236,224,${0.4 + 0.5 * Math.sin(t * 7)})`; g.fillRect(240, 62, 3, 28);
+    g.restore();
+  }
+  /* the line that was running. The two characters that did it are the only thing lit. */
+  tx('lib/claude-run.js', x1, yCode - 44, 40, C.slate2, 'Mono', 'right');
+  tx('question = normalizeQuestion(tu.input)', x0 + 2, yCode, 36, C.slate2);
+  const w2 = wd('|| { questions: [ ] };', 44);
+  tx('|| { questions: [ ] };', x0 + 44, yGate + 44, 44, hex(C.slate, C.bone, st.fall));
+  if (st.fall > 0.04) glow(C.amber, 28 * st.fall, () => {
+    g.strokeStyle = `rgba(255,178,74,${0.82 * st.fall})`; g.lineWidth = 3;
+    g.beginPath(); g.roundRect(x0 + 34, yGate, w2 + 24, 62, 10); g.stroke();
+  });
+
+  /* an empty array went in; something solid came out, so the run counted as asking */
+  if (st.fall > 0.3) {
+    const p = ss((st.fall - 0.3) / 0.7);
+    g.save(); g.globalAlpha = p * cl(st.mechAlpha ?? 1);
+    glow(C.amber, 14, () => {
+      line([[x0 + 58, yGate + 66], [x0 + 58, ySolid - 6]], C.amber, 4);
+      line([[x0 + 48, ySolid - 18], [x0 + 58, ySolid - 6], [x0 + 68, ySolid - 18]], C.amber, 4);
+    });
+    const s = mix(0.86, 1, p); g.translate(x0 + 34, ySolid); g.scale(s, s);
+    glow('rgba(255,246,232,.55)', 24 * p, () => rr(0, 0, 464, 68, 12, C.bone));
+    tx('{ questions: [ ] }', 22, 48, 40, '#13181f');
+    tx('truthy', 500, 48, 40, C.amber);                      /* the whole joke, in one word */
+    g.restore();
+  }
+  if (st.flip > 0.02) {
+    g.save(); g.globalAlpha = cl(st.flip) * cl(st.mechAlpha ?? 1);
+    const s = mix(1.18, 1, cl(st.flip)); g.translate(x0 + 60, yKill); g.scale(s, s);
+    glow(C.red, 26 * cl(st.flip), () => rr(0, 0, 500, 68, 12, 'rgba(255,90,64,.12)', C.red, 2));
+    tx('killReason=question', 20, 48, 40, C.red);
+    g.restore();
+    if (st.flip > 0.5) {                                     /* the solid object presses the switch */
+      g.save(); g.globalAlpha = cl((st.flip - 0.5) * 2) * cl(st.mechAlpha ?? 1);
+      glow(C.red, 14, () => line([[x0 + 160, ySolid + 68], [x0 + 160, yKill - 12],
+                                  [x0 + 160, yKill - 2]], C.red, 4));
+      g.restore();
+    }
+  }
+  /* exit 129 runs up the margin and crosses the gap to the render nobody was holding */
+  if (st.exitRun > 0.01) {
+    const p = cl(st.exitRun), mx = x1 + 44, orphan = renderEnd > cut + 4;
+    /* with nothing left in the background, the kill runs out and reaches nothing: the path stops at the margin */
+    const pts = [[x0 + 868, yKill + 34], [mx, yKill + 34], [mx, yRend + drop + 10]];
+    if (orphan) pts.push([cut + 30, yRend + drop + 10]);
+    const segs = pts.length - 1, i = Math.min(segs - 1, Math.floor(p * segs)), fr = p * segs - i;
+    const path = pts.slice(0, i + 1);
+    path.push([mix(pts[i][0], pts[i+1][0], fr), mix(pts[i][1], pts[i+1][1], fr)]);
+    glow(C.red, 24, () => line(path, C.red, 4));
+    g.save(); g.globalAlpha = cl((p - 0.3) / 0.3) * cl(st.mechAlpha ?? 1);
+    tx('exit 129', x0 + 644, yKill + 50, 48, C.red);
+    g.restore();
+    if (p > 0.72 && renderEnd > cut + 4) {                   /* the jump it should never have made */
+      const k = cl((p - 0.72) / 0.18);
+      glow(C.red, 30, () => line([[cut + 30, yRend + drop + 10], [cut + 24, yRend + drop + 20]], C.red, 3 + 3 * (1 - k)));
+    }
+  }
+  g.restore();
+}
+
+/* ---- the one line of words in the film --------------------------------------------------------- */
+function drawLine(st) {
+  if (st.line <= 0.01) return;
+  const lines = ['it was killed', 'to ask nothing.'], size = WIDE ? 92 : 78;
+  const y0 = H * (WIDE ? 0.44 : 0.46);
+  g.save();
+  lines.forEach((s, i) => {
+    const w = wd(s, size, 'Grot', '700'), x = W / 2 - w / 2, y = y0 + i * size * 1.14;
+    const p = cl((st.line - i * 0.12) / 0.88);                 // the second line follows the first
+    g.save();
+    g.beginPath(); g.rect(x - 8, y - size, w * ss(p) + 14, size * 1.4); g.clip();
+    g.globalAlpha = cl(p * 1.2);
+    tx(s, x, y, size, C.bone, 'Grot', 'left', '700');
+    g.restore();
+  });
+  g.restore();
+}
+function drawNotes(st, t) {
+  const notes = [{ s: 'I got this but no image', x: 110, y: 138, rot: -0.016 },
+                 { s: 'can you fix it?', x: 486, y: 212, rot: 0.021 }];
+  notes.forEach((n, i) => {
+    const p = st.notes[i]; if (p <= 0.01) return;
+    g.save(); g.globalAlpha = cl(p);
+    const w = wd(n.s, 46, 'Human', 'italic') + 56;
+    /* -40, not -78: the old overshoot carried the plate through the top 40 px on the way in (QA) */
+    g.translate(n.x + w / 2, n.y + mix(-40, 0, cl(p)) + 2.5 * Math.sin(t * 1.3 + i));
+    g.rotate(n.rot * cl(p));
+    const s = mix(1.07, 1, cl(p)); g.scale(s, s);
+    glow('rgba(0,0,0,.7)', 36, () => rr(-w / 2, -40, w, 82, 14, C.bone));
+    g.font = 'italic 46px Human'; g.textAlign = 'center'; g.fillStyle = '#13181f'; g.fillText(n.s, 0, 16);
+    g.restore();
+  });
+}
+
+/* ---- the fix beat ------------------------------------------------------------------------------
+   Every string below is copied from the repository or from the test run, per facts.json F5 and F6.
+   The removed line is the repository's one line, wrapped onto two rows to fit the frame; the added
+   lines are the repository's, re-wrapped the same way. Nothing here is paraphrased or invented, and
+   the counts are the ones the run printed. Ruling 13, 14, 15. */
+const FIX_SUBJ = ['fix(HEL-622): keep a video render',
+                  'in the foreground, and let a',
+                  'rejected AskUserQuestion pass'];
+const FIX_OLD = ['question = normalizeQuestion(tu.input)', '|| { questions: [] };'];
+const FIX_NEW = ['const asked = normalizeQuestion(tu.input);',
+                 'if (asked) { question = asked; }',
+                 'else if (unreadableQuestionAt == null) {',
+                 '  unreadableQuestionAt = Date.now();',
+                 '}'];
+const FIX_TEST = ['the empty-questions call normalises to',
+                  'nothing, which is what arms this'];
+function fitMono(lines, maxW, start = 44, floor = 34) {
+  let s = start;
+  while (s > floor && lines.some(l => wd(l, s) > maxW)) s -= 1;
+  return s;
+}
+function drawFix(st, t) {
+  const a = cl(st.fix); if (a <= 0.002) return;
+  const f = st.f ?? 0;
+  const strike = ss(at(f, K.strike, 24));
+  const rowIn = i => land(at(f, K.swap + i * 7, 28));           // the new lines arrive one after another
+  const testsIn = land(at(f, K.testsIn, 30));
+  const named = ss(at(f, K.testsIn + 24, 30));
+
+  g.save();
+  /* the incident does not go away: it is lowered, and it is still there when the panel leaves */
+  g.fillStyle = `rgba(7,9,12,${0.9 * a})`; g.fillRect(0, 0, W, H);
+
+  const PW = Math.min(W - 64, WIDE ? 1180 : 1016), pad = 32, inner = PW - pad * 2;
+  const cs = fitMono([...FIX_OLD, ...FIX_NEW], inner - 52);     // 52 px of diff gutter
+  const cl_ = Math.round(cs * 1.34);
+  const H_HASH = 64, H_SUBJ = FIX_SUBJ.length * 48, H_CODE = (FIX_OLD.length + FIX_NEW.length) * cl_,
+        H_TEST = 36 + 64 + 50 + FIX_TEST.length * 42;   // file row, counts, gap, the named test
+  const PH = pad * 2 + H_HASH + H_SUBJ + 30 + H_CODE + 34 + H_TEST;
+  const PX = (W - PW) / 2, PY = (H - PH) / 2 + mix(44, 0, ss(a));
+
+  g.globalAlpha = a;
+  glow('rgba(0,0,0,.9)', 60, () => rr(PX, PY + 14, PW, PH, 24, '#0a0e13'));
+  rr(PX, PY, PW, PH, 24, 'rgba(17,22,29,.97)', C.edge, 2);
+
+  let y = PY + pad + 46;
+  /* the commit: its short hash and the time it was authored, both copied (F5) */
+  tx('60f0e18', PX + pad, y, 54, C.amber, 'Mono', 'left', '700');
+  tx('2026-10-13  09:17:23 UTC', PX + PW - pad, y, 40, C.bone, 'Mono', 'right');
+  y += 18;
+  FIX_SUBJ.forEach((s, i) => { tx(s, PX + pad, y + 42 + i * 48, 40, C.slate2, 'Grot', 'left'); });
+  y += H_SUBJ + 30;
+  line([[PX + pad, y], [PX + PW - pad, y]], C.edge, 2);
+  y += 20;
+
+  /* the line that did it, struck through as the rewrite lands */
+  const gx = PX + pad, cx = gx + 52;
+  FIX_OLD.forEach((s, i) => {
+    const yy = y + cl_ * (i + 1) - 10;
+    g.save(); g.globalAlpha = a * mix(1, 0.42, ss(rowIn(0)));
+    if (i === 0) tx('−', gx, yy, cs, C.red, 'Mono');
+    tx(s, cx + (i ? 28 : 0), yy, cs, hex(C.slate2, '#c86a58', strike));
+    if (strike > 0.01) {                                        /* the strike sweeps, it does not blink */
+      const w = wd(s, cs) * ss(strike);
+      line([[cx + (i ? 28 : 0), yy - cs * 0.32], [cx + (i ? 28 : 0) + w, yy - cs * 0.32]], C.red, 3);
+    }
+    g.restore();
+  });
+  const yNew = y + cl_ * FIX_OLD.length;
+  FIX_NEW.forEach((s, i) => {
+    const p = rowIn(i); if (p <= 0.01) return;
+    const yy = yNew + cl_ * (i + 1) - 10;
+    g.save(); g.globalAlpha = a * cl(p);
+    g.translate(mix(-18, 0, cl(p)), 0);
+    if (i === 0) tx('+', gx, yy, cs, C.amber, 'Mono');
+    tx(s, cx, yy, cs, i === 0 ? C.bone : C.slate2);
+    g.restore();
+  });
+  y += H_CODE + 34;
+  line([[PX + pad, y], [PX + PW - pad, y]], C.edge, 2);
+  y += 20;
+
+  /* the tests, as the run printed them (F6). No ticking green check, no progress bar. */
+  if (testsIn > 0.01) {
+    g.save(); g.globalAlpha = a * cl(testsIn);
+    tx('tests/claude-run.test.ts', PX + pad, y + 36, 38, C.slate2, 'Mono');
+    const s = mix(1.18, 1, cl(testsIn));
+    g.save(); g.translate(PX + pad, y + 100); g.scale(s, s);
+    let dx = 0;
+    dx += tx('tests 29', 0, 0, 48, C.bone, 'Mono', 'left', '700') + 38;
+    dx += tx('pass 29', dx, 0, 48, C.amber, 'Mono', 'left', '700') + 38;
+    tx('fail 0', dx, 0, 48, C.slate2, 'Mono', 'left', '700');
+    g.restore();
+    if (named > 0.01) {
+      g.globalAlpha = a * cl(named) * 0.92;
+      FIX_TEST.forEach((s2, i) => {
+        tx(i === 0 ? '✔  ' + s2 : '    ' + s2, PX + pad, y + 150 + i * 42, 34, C.slate, 'Mono');
+      });
+    }
+    g.restore();
+  }
+  g.restore();
+}
+
+/* ---- one frame ---------------------------------------------------------------------------------- */
+function drawBackground(st) {
+  g.fillStyle = C.ink; g.fillRect(0, 0, W, H);
+  const r = g.createRadialGradient(W / 2, H * 0.46, 120, W / 2, H * 0.52, Math.max(W, H) * 0.78);
+  r.addColorStop(0, 'rgba(32,42,56,.5)'); r.addColorStop(1, 'rgba(7,9,12,0)');
+  g.fillStyle = r; g.fillRect(0, 0, W, H);
+  if (st.exitRun > 0 && st.exitRun < 1) { g.fillStyle = `rgba(255,90,64,${0.045 * (1 - st.exitRun)})`; g.fillRect(0, 0, W, H); }
+}
+function drawGrain(f) {
+  const cv = grains[Math.abs(f) % 3], ox = (f * 37) % 256, oy = (f * 91) % 256;
+  for (let x = -ox; x < W; x += 256) for (let y = -oy; y < H; y += 256) g.drawImage(cv, x, y);
+}
+function render(st, t) {
+  drawBackground(st);
+  const G = groups(st);
+  g.save();
+  g.translate(st.cam.ax, st.cam.ay); g.scale(st.cam.s, st.cam.s); g.translate(-st.cam.px, -st.cam.py);
+  g.save(); useGroup(G.mech); drawMech(st, t); g.restore();
+  g.save(); useGroup(G.card); drawCard(st, t); drawNotes(st, t); g.restore();
+  g.restore();
+  if (st.line > 0.01) {                                      /* the film speaks: everything else steps back */
+    const held = ss(at(st.f ?? 0, K.lineIn + 30, 90));     // the room lifts slowly under the words
+    g.fillStyle = `rgba(7,9,12,${(0.88 - 0.06 * held) * ss(st.line)})`; g.fillRect(0, 0, W, H);
+  }
+  drawLine(st);
+  drawFix(st, t);
+  if (st.sign > 0) { g.save(); g.globalAlpha = cl(st.sign);
+    tx('@NKocica', W - 46, H - 42, 36, C.slate2, 'Mono', 'right'); g.restore(); }
+  drawGrain(Math.round(t * T.fps));
+  return canvas;
+}
+
+/* ---- the playable page -------------------------------------------------------------------------- */
+const track = document.getElementById('track'), knob = document.getElementById('knob'),
+      fill = document.getElementById('fill'), mark = document.getElementById('mark'),
+      stateEl = document.getElementById('state'), replay = document.getElementById('replay');
+let mode = 'dial', filmStart = 0, ready = false, stepIx = -1;
+/* Reduced motion is a live query, not a one-off read at load. The page used to paint one frame and return,
+   so moving the handle updated this text while the canvas kept the evidenced card: the model wearing
+   08:53:00.940 UTC and `0 attachments`, which is the exact conflation ruling 9 forbids (QA). */
+const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+const still = () => motionQuery.matches;
+/* With motion off, the film is still readable: these are its beats as stills, every one carrying a fact. */
+const stepFrames = () => [0, K.writeStop + 30, K.zeroAttachments + 26, K.lineIn + 30, K.founderTwo + 30,
+                          K.exitKill + 30, K.swap + 40, K.testsIn + 40, K.fileLands + 40, K.resolve + 30];
+function layoutDial() {
+  const w = track.clientWidth - 62;
+  knob.style.left = (cl(dialSec / DIAL_MAX) * w) + 'px';
+  fill.style.width = Math.max(2, cl(dialSec / DIAL_MAX) * w) + 'px';
+  mark.style.left = (cl(120 / DIAL_MAX) * w + 31) + 'px';
+  knob.textContent = Math.round(dialSec) + ' s';
+  knob.setAttribute('aria-valuenow', String(Math.round(dialSec)));
+  knob.setAttribute('aria-valuetext', Math.round(dialSec) + ' seconds');
+  /* Three states, and only the first one is allowed to point at evidence. */
+  stateEl.innerHTML = atEvidence()
+    ? 'The run we measured. The call gives up first, so the tail of the render is left in the <i>background</i> with its tether cut, the empty question is read as a real one, and <b>exit 129</b> reaches across the gap. This is the one we have: <b>0 attachments</b>, 08:53:00.940 UTC.'
+    : dialSec < RENDER_SEC
+    ? 'A <i>model run</i>. The same two causes still line up, but we never ran it at this timeout — so the card carries no timestamp and no attachment row. Drag back to the orange mark for the run we actually measured.'
+    : 'A <i>model run</i>. The call outlives the render, so nothing is left in the background for <b>exit 129</b> to take and the kill reaches nothing. What this would have posted is not something we measured, so the card carries no timestamp and the attachment row stays empty.';
+  /* With motion off nothing else ever repaints, so the canvas has to be redrawn here or the picture and
+     the words drift apart. This is the whole fix: the text never describes a card the reader cannot see. */
+  if (ready && still() && stepIx < 0) render(dialState(0), 0);
+}
+function leaveSteps() {                                      // any handle input drops out of the stills
+  if (stepIx < 0) return;
+  stepIx = -1; replay.textContent = 'Step through the 3 h 2 min';
+}
+function setFromPointer(ev) {
+  const r = track.getBoundingClientRect();
+  const raw = cl((ev.clientX - r.left - 31) / (r.width - 62), 0, 1) * DIAL_MAX;
+  dialSec = Math.abs(raw - EVIDENCED) < 9 ? EVIDENCED : raw;   // a detent on the one value we read
+  mode = 'dial'; leaveSteps(); layoutDial();
+}
+let dragging = false;
+track.addEventListener('pointerdown', e => { dragging = true; knob.style.cursor = 'grabbing'; setFromPointer(e); e.preventDefault(); });
+addEventListener('pointermove', e => { if (dragging) setFromPointer(e); });
+addEventListener('pointerup', () => { dragging = false; knob.style.cursor = 'grab'; });
+knob.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const next = cl(dialSec + (e.key === 'ArrowRight' ? 30 : -30), 0, DIAL_MAX);
+    /* the keyboard may never step over the evidence: a 30 s stride from 430 used to skip 120 entirely */
+    dialSec = (dialSec - EVIDENCED) * (next - EVIDENCED) < 0 ? EVIDENCED : next;
+    mode = 'dial'; leaveSteps(); layoutDial(); e.preventDefault();
+  }
+});
+/* With motion on, Replay plays the film. With motion off it used to do nothing at all: it set a mode no
+   loop was reading. It now steps the same film one still at a time, so a reader who asked for no motion
+   still reaches 11:55:54.668 UTC, the byte count and the commit, none of which the handle can show. */
+replay.onclick = () => {
+  if (!still()) { mode = 'film'; filmStart = performance.now(); return; }
+  const frames = stepFrames();
+  stepIx += 1;
+  if (stepIx >= frames.length) { leaveSteps(); layoutDial(); return; }
+  const f = frames[stepIx];
+  render(sceneState(f), f / T.fps);
+  const last = stepIx === frames.length - 1;
+  replay.textContent = last ? 'Back to the handle' : `Next still (${stepIx + 2} of ${frames.length})`;
+  stateEl.textContent = `Still ${stepIx + 1} of ${frames.length}. Motion is off, so the film is shown one `
+    + `frame at a time. The handle is still live — move it to go back to the mechanism.`;
+};
+addEventListener('resize', layoutDial);
+motionQuery.addEventListener('change', () => { leaveSteps(); layoutDial(); });
+
+Promise.all([document.fonts.load('30px Mono'), document.fonts.load('700 38px Grot'),
+             document.fonts.load('italic 46px Human')]).then(() => {
+  buildSheet(); buildGrain();
+  ready = true;
+  if (still()) replay.textContent = 'Step through the 3 h 2 min';
+  layoutDial();                                              // paints the first frame in either mode
+  window.piece = {
+    width: W, height: H, fps: T.fps,
+    seconds: qs.has('test') ? T.testSeconds : T.seconds,
+    frame: t => render(sceneState(Math.round(t * T.fps)), t),
+  };
+  /* The loop always runs and draws nothing while motion is off, so the preference can change at any time
+     and the page follows it. It used to return here, which is what left the canvas frozen. */
+  const loop = () => {
+    if (!window.CAPTURE_MODE && !still()) {
+      const now = performance.now() / 1000;
+      if (mode === 'film') {
+        const t = (performance.now() - filmStart) / 1000;
+        if (t >= T.seconds) mode = 'dial'; else render(sceneState(Math.round(t * T.fps)), t);
+      } else render(dialState(now), now);
+    }
+    requestAnimationFrame(loop);
+  };
+  loop();
+});
+</script></html>
